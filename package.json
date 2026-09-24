@@ -1,0 +1,43 @@
+{
+  "name": "maex-trade",
+  "version": "1.0.0",
+  "description": "MAEX Trade — college project: member investment platform (Node + Express + MySQL)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:init": "node scripts/initDb.js",
+    "db:migrate": "node scripts/migrate.js",
+    "job:roi": "node scripts/runRoi.js",
+    "job:rank": "node scripts/runRank.js",
+    "job:expire": "node scripts/expireDeposits.js",
+    "test": "jest --runInBand --forceExit"
+  },
+  "jest": {
+    "setupFiles": [
+      "<rootDir>/tests/setup.js"
+    ],
+    "testTimeout": 30000
+  },
+  "keywords": [
+    "mlm",
+    "express",
+    "mysql",
+    "college-project"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.11.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "supertest": "^7.2.2"
+  }
+}
