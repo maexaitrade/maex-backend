@@ -22,6 +22,9 @@ module.exports = {
     secret: required('JWT_SECRET', 'dev-insecure-secret-change-me'),
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
+  // Secret key that must be supplied to create an admin via the setup endpoint.
+  // Set a long random value in .env; if unset, the endpoint is disabled entirely.
+  adminSetupKey: process.env.ADMIN_SETUP_KEY || '',
   cron: {
     enabled: (process.env.ENABLE_CRON || 'false') === 'true',
     roiHour: parseInt(process.env.ROI_CRON_HOUR || '1', 10),
