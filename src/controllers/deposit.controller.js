@@ -3,6 +3,13 @@ const env = require('../config/env');
 const { isTronAddress } = require('../utils/tron');
 const { badRequest } = require('../utils/httpError');
 const { createPayment } = require('../services/nowpayments.service');
+const settings = require('../services/settings.service');
+
+// Minimum deposit amount from settings (admin-editable), default 100.
+async function getMinDeposit() {
+  const s = await settings.getSettings();
+  return Number(s.min_deposit ?? 100);
+}
 
 // Flip any still-pending NOWPayments deposits whose validity window has passed
 // to 'expired'. NOWPayments keeps unpaid payments in "waiting" forever, so we
@@ -25,6 +32,8 @@ async function create(req, res) {
   const { amount, tx_hash, from_address } = req.body || {};
   const amt = Number(amount);
   if (!amt || amt <= 0) throw badRequest('amount must be a positive number');
+  const minDeposit = await getMinDeposit();
+  if (amt < minDeposit) throw badRequest(`minimum deposit is ${minDeposit}`);
   // Deposits are TRC-20 only — if a sender address is supplied it must be valid.
   if (from_address && !isTronAddress(from_address)) throw badRequest('from_address must be a valid TRC-20 (TRON) address');
 
@@ -42,6 +51,8 @@ async function initNowPayments(req, res) {
   const { amount } = req.body || {};
   const amt = Number(amount);
   if (!amt || amt <= 0) throw badRequest('amount must be a positive number');
+  const minDeposit = await getMinDeposit();
+  if (amt < minDeposit) throw badRequest(`minimum deposit is ${minDeposit}`);
   if (!process.env.NOWPAYMENTS_API_KEY) throw badRequest('payment gateway not configured');
 
   // Insert pending deposit first to get an ID we use as order_id
