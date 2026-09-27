@@ -4,6 +4,19 @@ const { ensureWallet } = require('../services/wallet.service');
 const { round2 } = require('../utils/money');
 const { isTronAddress } = require('../utils/tron');
 const { badRequest } = require('../utils/httpError');
+const settings = require('../services/settings.service');
+
+// GET /api/settings — public-facing platform values the member UI needs
+// (minimums, fees, network). Admin edits these in the settings table.
+async function publicSettings(_req, res) {
+  const s = await settings.getSettings();
+  res.json({
+    min_deposit: Number(s.min_deposit ?? 100),
+    min_withdraw: Number(s.min_withdraw ?? 50),
+    withdraw_charge: Number(s.withdraw_charge ?? 6),
+    deposit_network: s.deposit_network || 'TRC-20',
+  });
+}
 
 // GET /api/me/dashboard
 async function dashboard(req, res) {
@@ -129,4 +142,4 @@ async function deleteWallet(req, res) {
   res.json({ ok: true });
 }
 
-module.exports = { dashboard, team, income, updateProfile, deleteWallet };
+module.exports = { dashboard, team, income, updateProfile, deleteWallet, publicSettings };
