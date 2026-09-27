@@ -38,11 +38,38 @@ CREATE TABLE users (
   current_rank_id INT UNSIGNED NULL,
   role            ENUM('member','admin') NOT NULL DEFAULT 'member',
   status          ENUM('active','blocked') NOT NULL DEFAULT 'active',
+  email_verified  TINYINT(1) NOT NULL DEFAULT 0,
+  verify_token    VARCHAR(120) NULL,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email),
   KEY idx_users_sponsor (sponsor_id),
   CONSTRAINT fk_users_sponsor FOREIGN KEY (sponsor_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE password_reset_tokens (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id    BIGINT UNSIGNED NOT NULL,
+  token      VARCHAR(120) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used       TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_prt_user (user_id),
+  CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE pending_registrations (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email         VARCHAR(160) NOT NULL UNIQUE,
+  name          VARCHAR(120) NOT NULL,
+  phone         VARCHAR(30) NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  sponsor_id    BIGINT UNSIGNED NULL,
+  otp           VARCHAR(6) NOT NULL,
+  expires_at    DATETIME NOT NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
 ) ENGINE=InnoDB;
 
 -- 2. genealogy (closure table: every ancestor->descendant pair with depth) ---
