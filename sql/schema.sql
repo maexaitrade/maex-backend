@@ -271,6 +271,7 @@ INSERT INTO settings (`key`, `value`) VALUES
   ('booster_directs', '7'),
   ('booster_percent', '20'),
   ('cap_multiplier',  '2'),
-  ('min_withdraw',    '50'),
+  ('min_deposit',     '100'),
+  ('min_withdraw',    '10'),
   ('withdraw_charge', '6'),
   ('deposit_network', 'TRC-20');
