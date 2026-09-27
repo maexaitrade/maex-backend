@@ -9,6 +9,9 @@ const withdrawals = require('../controllers/withdrawal.controller');
 // Everything here requires a logged-in member.
 router.use(authenticate);
 
+// Public platform settings (minimums, fees) for the member UI
+router.get('/settings', asyncHandler(member.publicSettings));
+
 // Profile / dashboard
 router.get('/me/dashboard', asyncHandler(member.dashboard));
 router.get('/me/team', asyncHandler(member.team));
