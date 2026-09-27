@@ -25,6 +25,15 @@ module.exports = {
   // Secret key that must be supplied to create an admin via the setup endpoint.
   // Set a long random value in .env; if unset, the endpoint is disabled entirely.
   adminSetupKey: process.env.ADMIN_SETUP_KEY || '',
+
+  // Transactional email (Resend). If resendApiKey is empty, email sending is
+  // skipped (logged instead) so local dev works without a key.
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.MAIL_FROM || 'MAEX Trade <onboarding@resend.dev>',
+  },
+  // Public frontend base URL used to build links in emails (verify, reset).
+  webUrl: process.env.WEB_URL || process.env.APP_URL || 'http://localhost:5173',
   cron: {
     enabled: (process.env.ENABLE_CRON || 'false') === 'true',
     roiHour: parseInt(process.env.ROI_CRON_HOUR || '1', 10),
