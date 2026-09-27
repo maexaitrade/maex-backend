@@ -81,7 +81,8 @@ async function reviewDeposit(req, res) {
 async function listWithdrawals(req, res) {
   const status = req.query.status || 'pending';
   const [rows] = await pool.query(
-    `SELECT w.*, u.name, u.email FROM withdrawals w JOIN users u ON u.id = w.user_id
+    `SELECT w.*, u.name, u.email, u.phone, CONCAT('MAEX', u.id) AS member_code
+     FROM withdrawals w JOIN users u ON u.id = w.user_id
      WHERE w.status = ? ORDER BY w.id DESC`,
     [status]
   );
@@ -360,7 +361,7 @@ async function adjustWallet(req, res) {
       amount: amt,
       referenceTable: 'audit_logs',
       referenceId: null,
-      bucket: direction === 'credit' ? 'earned' : null,
+      bucket: null,  // adjustments do NOT count as earned income
     });
     await audit(conn, req.user.id, `wallet.adjust.${direction}`, { userId, amount: amt, note });
     const [[updated]] = await conn.query('SELECT balance FROM wallets WHERE user_id = ?', [userId]);
