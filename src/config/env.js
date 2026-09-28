@@ -41,5 +41,7 @@ module.exports = {
   deposit: {
     // How long a NOWPayments deposit stays payable before it is marked expired.
     validHours: parseInt(process.env.DEPOSIT_VALID_HOURS || '2', 10),
+    // 'admin' = direct USDT to admin address, 'gateway' = NOWPayments
+    via: process.env.DEPOSIT_VIA || 'admin',
   },
 };
