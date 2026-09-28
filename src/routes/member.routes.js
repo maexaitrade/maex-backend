@@ -24,6 +24,7 @@ router.get('/packages', asyncHandler(packages.list));
 router.post('/packages/buy', asyncHandler(packages.buy));
 
 // Deposits
+router.get('/deposits/address', asyncHandler(deposits.getDepositAddress));
 router.post('/deposits', asyncHandler(deposits.create));
 router.post('/deposits/nowpayments', asyncHandler(deposits.initNowPayments));
 router.get('/deposits', asyncHandler(deposits.listMine));
