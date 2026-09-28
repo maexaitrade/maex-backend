@@ -34,8 +34,15 @@ async function create(req, res) {
   if (!amt || amt <= 0) throw badRequest('amount must be a positive number');
   const minDeposit = await getMinDeposit();
   if (amt < minDeposit) throw badRequest(`minimum deposit is ${minDeposit}`);
-  // Deposits are TRC-20 only — if a sender address is supplied it must be valid.
   if (from_address && !isTronAddress(from_address)) throw badRequest('from_address must be a valid TRC-20 (TRON) address');
+
+  if (tx_hash) {
+    const [dup] = await pool.query(
+      "SELECT id FROM deposits WHERE tx_hash = ? AND status != 'rejected'",
+      [tx_hash]
+    );
+    if (dup.length) throw badRequest('This transaction hash has already been submitted');
+  }
 
   const [result] = await pool.query(
     `INSERT INTO deposits (user_id, amount, tx_hash, from_address, status)
@@ -45,8 +52,17 @@ async function create(req, res) {
   res.status(201).json({ id: result.insertId, status: 'pending', amount: amt });
 }
 
+// GET /api/deposits/address — returns the admin deposit address for direct deposits
+async function getDepositAddress(_req, res) {
+  const s = await settings.getSettings();
+  const address = s.admin_deposit_address || '';
+  if (!address) throw badRequest('deposit address not configured — contact admin');
+  res.json({ address, network: s.deposit_network || 'TRC-20' });
+}
+
 // POST /api/deposits/nowpayments  — create a NOWPayments USDT deposit
 async function initNowPayments(req, res) {
+  if (env.deposit.via !== 'gateway') throw badRequest('Gateway deposits are disabled');
   const userId = req.user.id;
   const { amount } = req.body || {};
   const amt = Number(amount);
@@ -107,4 +123,4 @@ async function listMine(req, res) {
   res.json({ items: rows });
 }
 
-module.exports = { create, initNowPayments, listMine, expireStale };
+module.exports = { create, initNowPayments, listMine, expireStale, getDepositAddress };
