@@ -7,6 +7,7 @@ router.use(authenticate, requireRole('admin'));
 
 // Deposits
 router.get('/deposits', asyncHandler(admin.listDeposits));
+router.get('/deposits/:id/verify', asyncHandler(admin.verifyDepositTx));
 router.patch('/deposits/:id', asyncHandler(admin.reviewDeposit));
 
 // Withdrawals
