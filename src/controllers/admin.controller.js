@@ -6,6 +6,7 @@ const { payReferralOnDeposit } = require('../services/referral.service');
 const { recomputeRank } = require('../services/rank.service');
 const { runDailyRoi } = require('../services/roi.service');
 const { badRequest, notFound, conflict } = require('../utils/httpError');
+const trongrid = require('../services/trongrid.service');
 
 async function audit(conn, actorId, action, detail) {
   await conn.query(
@@ -20,11 +21,39 @@ async function audit(conn, actorId, action, detail) {
 async function listDeposits(req, res) {
   const status = req.query.status || 'pending';
   const [rows] = await pool.query(
-    `SELECT d.*, u.name, u.email FROM deposits d JOIN users u ON u.id = d.user_id
+    `SELECT d.*, u.name, u.email, u.phone, CONCAT('MAEX', u.id) AS member_code
+     FROM deposits d JOIN users u ON u.id = d.user_id
      WHERE d.status = ? ORDER BY d.id DESC`,
     [status]
   );
   res.json({ items: rows });
+}
+
+// GET /api/admin/deposits/:id/verify — TronGrid verification for a deposit's tx_hash
+async function verifyDepositTx(req, res) {
+  const depositId = Number(req.params.id);
+  const [[deposit]] = await pool.query('SELECT * FROM deposits WHERE id = ?', [depositId]);
+  if (!deposit) throw notFound('deposit not found');
+  if (!deposit.tx_hash) throw badRequest('no transaction hash on this deposit');
+
+  const s = await settings.getSettings();
+  const adminAddress = s.admin_deposit_address || '';
+
+  const tronData = await trongrid.verifyTransaction(deposit.tx_hash);
+
+  const [dupRows] = await pool.query(
+    "SELECT id FROM deposits WHERE tx_hash = ? AND id != ? AND status != 'rejected'",
+    [deposit.tx_hash, depositId]
+  );
+
+  res.json({
+    trongrid: tronData,
+    adminAddress,
+    matchesAdmin: tronData.valid && tronData.to === adminAddress,
+    amountMatches: tronData.valid && Number(tronData.amount) >= Number(deposit.amount),
+    depositAmount: Number(deposit.amount),
+    duplicate: dupRows.length > 0,
+  });
 }
 
 // PATCH /api/admin/deposits/:id  body: { action: 'confirm' | 'reject' }
@@ -448,7 +477,7 @@ async function reports(_req, res) {
 }
 
 module.exports = {
-  listDeposits, reviewDeposit,
+  listDeposits, reviewDeposit, verifyDepositTx,
   listWithdrawals, reviewWithdrawal,
   upsertPackage, upsertRank, updateSetting,
   listPackages, listRanks, listSettings,
