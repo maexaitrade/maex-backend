@@ -15,6 +15,8 @@ async function publicSettings(_req, res) {
     min_withdraw: Number(s.min_withdraw ?? 50),
     withdraw_charge: Number(s.withdraw_charge ?? 6),
     deposit_network: s.deposit_network || 'TRC-20',
+    deposit_via: s.deposit_via || 'admin',
+    admin_deposit_address: s.admin_deposit_address || '',
   });
 }
 
