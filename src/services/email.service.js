@@ -1,12 +1,15 @@
 const { Resend } = require('resend');
 const env = require('../config/env');
 
-const resend = env.email.resendApiKey ? new Resend(env.email.resendApiKey) : null;
+// Tests load the same .env as development; never use its live email credentials.
+const isTest = env.nodeEnv === 'test';
+const resend = !isTest && env.email.resendApiKey ? new Resend(env.email.resendApiKey) : null;
 
 // Low-level send. If no API key is configured, log and no-op so local dev and
 // tests never crash on a missing key. Never throws to the caller — a failed
 // email must not fail the user's action (register / reset).
 async function send({ to, subject, html }) {
+  if (isTest) return { skipped: true };
   if (!resend) {
     console.log(`[email] (skipped, no RESEND_API_KEY) -> ${to}: ${subject}`);
     return { skipped: true };
