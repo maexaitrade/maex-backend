@@ -2,27 +2,36 @@ const { pool } = require('../config/db');
 const { getTeamBusiness } = require('../services/rank.service');
 const { ensureWallet } = require('../services/wallet.service');
 const { round2 } = require('../utils/money');
-const { isTronAddress } = require('../utils/tron');
 const { badRequest } = require('../utils/httpError');
 const settings = require('../services/settings.service');
+const { activeNetwork, isValidAddress, publicNetwork } = require('../utils/cryptoNetwork');
 
 // GET /api/settings — public-facing platform values the member UI needs
 // (minimums, fees, network). Admin edits these in the settings table.
 async function publicSettings(_req, res) {
   const s = await settings.getSettings();
+  const network = publicNetwork(s);
   res.json({
     min_deposit: Number(s.min_deposit ?? 100),
     min_withdraw: Number(s.min_withdraw ?? 50),
     withdraw_charge: Number(s.withdraw_charge ?? 6),
-    deposit_network: s.deposit_network || 'TRC-20',
+    active_crypto_network: network.code,
+    active_crypto_network_label: network.label,
+    deposit_network: network.code,
+    deposit_network_label: network.label,
     deposit_via: s.deposit_via || 'admin',
-    admin_deposit_address: s.admin_deposit_address || '',
+    admin_deposit_address: network.address,
+    deposit_address_placeholder: network.address_placeholder,
+    explorer_tx_base: network.explorer_tx_base,
+    explorer_address_base: network.explorer_address_base,
   });
 }
 
 // GET /api/me/dashboard
 async function dashboard(req, res) {
   const userId = req.user.id;
+  const s = await settings.getSettings();
+  const network = publicNetwork(s);
 
   const conn = await pool.getConnection();
   try {
@@ -63,6 +72,9 @@ async function dashboard(req, res) {
     res.json({
       wallet,
       wallet_address: wallet_address || null,
+      wallet_address_valid: Boolean(wallet_address && isValidAddress(wallet_address, network.code)),
+      active_crypto_network: network.code,
+      active_crypto_network_label: network.label,
       investments: withProgress,
       income,
       rank: rank && rank.name ? rank.name : null,
@@ -132,9 +144,14 @@ async function updateProfile(req, res) {
   const userId = req.user.id;
   const { wallet_address } = req.body || {};
   if (!wallet_address) throw badRequest('wallet_address is required');
-  if (!isTronAddress(wallet_address)) throw badRequest('invalid TRC-20 (TRON) wallet address');
-  await pool.query('UPDATE users SET wallet_address = ? WHERE id = ?', [wallet_address, userId]);
-  res.json({ ok: true, wallet_address });
+  const s = await settings.getSettings();
+  const network = activeNetwork(s);
+  const value = String(wallet_address).trim();
+  if (!isValidAddress(value, network)) {
+    throw badRequest(`invalid ${publicNetwork(s).label} wallet address`);
+  }
+  await pool.query('UPDATE users SET wallet_address = ? WHERE id = ?', [value, userId]);
+  res.json({ ok: true, wallet_address: value, network });
 }
 
 // DELETE /api/me/profile/wallet
