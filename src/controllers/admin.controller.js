@@ -7,6 +7,9 @@ const { recomputeRank } = require('../services/rank.service');
 const { runDailyRoi } = require('../services/roi.service');
 const { badRequest, notFound, conflict } = require('../utils/httpError');
 const trongrid = require('../services/trongrid.service');
+const {
+  NETWORKS, normalizeNetwork, isValidAddress, activeNetwork, depositAddress,
+} = require('../utils/cryptoNetwork');
 
 async function audit(conn, actorId, action, detail) {
   await conn.query(
@@ -32,12 +35,18 @@ async function listDeposits(req, res) {
 // GET /api/admin/deposits/:id/verify — TronGrid verification for a deposit's tx_hash
 async function verifyDepositTx(req, res) {
   const depositId = Number(req.params.id);
+  if (!Number.isInteger(depositId) || depositId <= 0) throw badRequest('invalid deposit id');
   const [[deposit]] = await pool.query('SELECT * FROM deposits WHERE id = ?', [depositId]);
   if (!deposit) throw notFound('deposit not found');
   if (!deposit.tx_hash) throw badRequest('no transaction hash on this deposit');
 
+  const network = normalizeNetwork(deposit.deposit_network) || 'TRC20';
+  if (network !== 'TRC20') {
+    throw badRequest(`automatic transaction verification is not available for ${NETWORKS[network].label}`);
+  }
+
   const s = await settings.getSettings();
-  const adminAddress = s.admin_deposit_address || '';
+  const adminAddress = deposit.deposit_address || depositAddress(s, 'TRC20');
 
   const tronData = await trongrid.verifyTransaction(deposit.tx_hash);
 
@@ -59,6 +68,7 @@ async function verifyDepositTx(req, res) {
 // PATCH /api/admin/deposits/:id  body: { action: 'confirm' | 'reject' }
 async function reviewDeposit(req, res) {
   const depositId = Number(req.params.id);
+  if (!Number.isInteger(depositId) || depositId <= 0) throw badRequest('invalid deposit id');
   const action = req.body?.action;
   if (!['confirm', 'reject'].includes(action)) throw badRequest("action must be 'confirm' or 'reject'");
 
@@ -205,12 +215,80 @@ async function upsertRank(req, res) {
 async function updateSetting(req, res) {
   const { key, value } = req.body || {};
   if (!key || value == null) throw badRequest('key and value are required');
+  const protectedKeys = new Set([
+    'active_crypto_network',
+    'deposit_address_trc20',
+    'deposit_address_bep20',
+    'deposit_address_spl',
+    'admin_deposit_address',
+    'deposit_network',
+  ]);
+  if (protectedKeys.has(key)) {
+    throw badRequest('use the deposit network controls to update this setting');
+  }
   await pool.query(
     'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
     [key, String(value)]
   );
   settings.clearCache();
   res.json({ key, value: String(value) });
+}
+
+// ---- Config: deposit networks ---------------------------------------------
+
+function serializeDepositNetworks(s) {
+  const active = activeNetwork(s);
+  return Object.values(NETWORKS).map((network) => ({
+    code: network.code,
+    label: network.label,
+    address: depositAddress(s, network.code),
+    address_placeholder: network.addressPlaceholder,
+    active: network.code === active,
+    explorer_address_base: network.explorerAddressBase,
+  }));
+}
+
+async function listDepositNetworks(_req, res) {
+  const s = await settings.getSettings();
+  res.json({ active_network: activeNetwork(s), items: serializeDepositNetworks(s) });
+}
+
+async function updateDepositNetworkAddress(req, res) {
+  const network = normalizeNetwork(req.params.network);
+  if (!network) throw badRequest('unsupported crypto network');
+  const address = String(req.body?.address || '').trim();
+  if (!address) throw badRequest('address is required');
+  if (!isValidAddress(address, network)) {
+    throw badRequest(`invalid ${NETWORKS[network].label} address`);
+  }
+
+  const key = NETWORKS[network].addressSetting;
+  await pool.query(
+    'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+    [key, address]
+  );
+  await audit(pool, req.user.id, 'deposit_network.address_update', { network, address });
+  settings.clearCache();
+  res.json({ network, address });
+}
+
+async function activateDepositNetwork(req, res) {
+  const network = normalizeNetwork(req.body?.network);
+  if (!network) throw badRequest('unsupported crypto network');
+
+  const s = await settings.getSettings();
+  const address = depositAddress(s, network);
+  if (!address || !isValidAddress(address, network)) {
+    throw badRequest(`save a valid ${NETWORKS[network].label} address before activating it`);
+  }
+
+  await pool.query(
+    'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+    ['active_crypto_network', network]
+  );
+  await audit(pool, req.user.id, 'deposit_network.activate', { network });
+  settings.clearCache();
+  res.json({ active_network: network });
 }
 
 // ---- Users & reports -------------------------------------------------------
@@ -300,11 +378,11 @@ async function getUserDetail(req, res) {
     [userId]
   );
   const [deposits] = await pool.query(
-    'SELECT id, amount, status, tx_hash, from_address, created_at, confirmed_at FROM deposits WHERE user_id = ? ORDER BY id DESC LIMIT 15',
+    'SELECT id, amount, status, tx_hash, from_address, deposit_network, deposit_address, created_at, confirmed_at FROM deposits WHERE user_id = ? ORDER BY id DESC LIMIT 15',
     [userId]
   );
   const [withdrawals] = await pool.query(
-    'SELECT id, amount, charge, net_amount, status, wallet_address, tx_hash, requested_at, processed_at FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 15',
+    'SELECT id, amount, charge, net_amount, status, wallet_address, withdrawal_network, tx_hash, requested_at, processed_at FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 15',
     [userId]
   );
   const [txns] = await pool.query(
@@ -318,11 +396,17 @@ async function getUserDetail(req, res) {
     [userId]
   );
 
+  const s = await settings.getSettings();
+  const network = activeNetwork(s);
+  user.wallet_address_valid = Boolean(user.wallet_address && isValidAddress(user.wallet_address, network));
+
   res.json({
     user, sponsor, investments, deposits, withdrawals,
     transactions: txns, referral_earnings: referralEarnings,
     team: teamByLevel, total_business: totalBusiness,
     next_rank: nextRank || null,
+    active_crypto_network: network,
+    active_crypto_network_label: NETWORKS[network].label,
   });
 }
 
@@ -345,7 +429,15 @@ async function updateUser(req, res) {
   if (name) { fields.push('name = ?'); vals.push(name.trim()); }
   if (email) { fields.push('email = ?'); vals.push(email.trim().toLowerCase()); }
   if (phone !== undefined) { fields.push('phone = ?'); vals.push(phone || null); }
-  if (wallet_address !== undefined) { fields.push('wallet_address = ?'); vals.push(wallet_address || null); }
+  if (wallet_address !== undefined) {
+    const value = wallet_address ? String(wallet_address).trim() : null;
+    if (value) {
+      const s = await settings.getSettings();
+      const network = activeNetwork(s);
+      if (!isValidAddress(value, network)) throw badRequest(`invalid ${NETWORKS[network].label} wallet address`);
+    }
+    fields.push('wallet_address = ?'); vals.push(value);
+  }
   if (status) {
     if (!['active', 'blocked'].includes(status)) throw badRequest("status must be 'active' or 'blocked'");
     fields.push('status = ?'); vals.push(status);
@@ -412,7 +504,14 @@ async function listRanks(_req, res) {
 }
 
 async function listSettings(_req, res) {
-  const [rows] = await pool.query('SELECT `key`, `value` FROM settings ORDER BY `key` ASC');
+  const [rows] = await pool.query(
+    `SELECT \`key\`, \`value\` FROM settings
+     WHERE \`key\` NOT IN (
+       'active_crypto_network', 'deposit_address_trc20', 'deposit_address_bep20',
+       'deposit_address_spl', 'admin_deposit_address', 'deposit_network'
+     )
+     ORDER BY \`key\` ASC`
+  );
   res.json({ items: rows });
 }
 
@@ -481,6 +580,7 @@ module.exports = {
   listWithdrawals, reviewWithdrawal,
   upsertPackage, upsertRank, updateSetting,
   listPackages, listRanks, listSettings,
+  listDepositNetworks, updateDepositNetworkAddress, activateDepositNetwork,
   listUsers, getUserDetail, updateUser, resetPassword, adjustWallet,
   listAudit, runRoi,
   reports,
