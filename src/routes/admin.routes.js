@@ -18,11 +18,14 @@ router.patch('/withdrawals/:id', asyncHandler(admin.reviewWithdrawal));
 router.post('/packages', asyncHandler(admin.upsertPackage));
 router.post('/ranks', asyncHandler(admin.upsertRank));
 router.post('/settings', asyncHandler(admin.updateSetting));
+router.patch('/deposit-networks/active', asyncHandler(admin.activateDepositNetwork));
+router.patch('/deposit-networks/:network', asyncHandler(admin.updateDepositNetworkAddress));
 
 // Config — read
 router.get('/packages', asyncHandler(admin.listPackages));
 router.get('/ranks', asyncHandler(admin.listRanks));
 router.get('/settings', asyncHandler(admin.listSettings));
+router.get('/deposit-networks', asyncHandler(admin.listDepositNetworks));
 
 // Users
 router.get('/users', asyncHandler(admin.listUsers));
