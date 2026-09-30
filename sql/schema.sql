@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS user_rank_link;
 DROP TABLE IF EXISTS ranks;
 DROP TABLE IF EXISTS packages;
 DROP TABLE IF EXISTS settings;
+DROP TABLE IF EXISTS password_reset_tokens;
+DROP TABLE IF EXISTS pending_registrations;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -120,6 +122,8 @@ CREATE TABLE deposits (
   amount       DECIMAL(18,2) NOT NULL,
   tx_hash          VARCHAR(120) NULL,
   from_address     VARCHAR(120) NULL,
+  deposit_network  VARCHAR(20) NULL,
+  deposit_address  VARCHAR(120) NULL,
   pay_address      VARCHAR(120) NULL,
   pay_amount_crypto DECIMAL(18,8) NULL,
   pay_valid_until  DATETIME NULL,           -- NOWPayments deposit expiry (app-enforced)
@@ -140,6 +144,7 @@ CREATE TABLE withdrawals (
   charge         DECIMAL(18,2) NOT NULL,         -- 6% fee
   net_amount     DECIMAL(18,2) NOT NULL,         -- amount - charge
   wallet_address VARCHAR(120) NOT NULL,
+  withdrawal_network VARCHAR(20) NULL,
   tx_hash        VARCHAR(120) NULL,
   status         ENUM('pending','paid','rejected') NOT NULL DEFAULT 'pending',
   requested_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -301,4 +306,10 @@ INSERT INTO settings (`key`, `value`) VALUES
   ('min_deposit',     '100'),
   ('min_withdraw',    '10'),
   ('withdraw_charge', '6'),
-  ('deposit_network', 'TRC-20');
+  ('deposit_network', 'TRC-20'),
+  ('active_crypto_network', 'TRC20'),
+  ('deposit_address_trc20', ''),
+  ('deposit_address_bep20', ''),
+  ('deposit_address_spl', ''),
+  ('admin_deposit_address', ''),
+  ('deposit_via', 'admin');
