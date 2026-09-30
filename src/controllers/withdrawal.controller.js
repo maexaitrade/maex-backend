@@ -3,6 +3,7 @@ const { round2, percentOf } = require('../utils/money');
 const settings = require('../services/settings.service');
 const { applyLedger, lockWallet } = require('../services/wallet.service');
 const { badRequest } = require('../utils/httpError');
+const { activeNetwork, isValidAddress, NETWORKS } = require('../utils/cryptoNetwork');
 
 // POST /api/withdrawals  body: { amount }
 // Applies min-withdraw and 6% charge, debits the wallet, creates a pending
@@ -14,12 +15,16 @@ async function request(req, res) {
   const s = await settings.getSettings();
   const min = Number(s.min_withdraw);
   const chargePct = Number(s.withdraw_charge);
+  const network = activeNetwork(s);
 
   if (!amount || amount <= 0) throw badRequest('amount must be a positive number');
   if (amount < min) throw badRequest(`minimum withdrawal is ${min}`);
 
   const [[user]] = await pool.query('SELECT wallet_address FROM users WHERE id = ?', [userId]);
-  if (!user || !user.wallet_address) throw badRequest('set your TRC-20 wallet address first');
+  if (!user || !user.wallet_address) throw badRequest(`set your ${NETWORKS[network].label} wallet address first`);
+  if (!isValidAddress(user.wallet_address, network)) {
+    throw badRequest(`your saved wallet is not a valid ${NETWORKS[network].label} address — update it before withdrawing`);
+  }
 
   const charge = percentOf(amount, chargePct);
   const net = round2(amount - charge);
@@ -29,9 +34,10 @@ async function request(req, res) {
     if (Number(wallet.balance) < amount) throw badRequest('insufficient balance');
 
     const [ins] = await conn.query(
-      `INSERT INTO withdrawals (user_id, amount, charge, net_amount, wallet_address, status)
-       VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [userId, amount, charge, net, user.wallet_address]
+      `INSERT INTO withdrawals
+         (user_id, amount, charge, net_amount, wallet_address, withdrawal_network, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      [userId, amount, charge, net, user.wallet_address, network]
     );
     const withdrawalId = ins.insertId;
 
@@ -54,6 +60,7 @@ async function request(req, res) {
     amount,
     charge,
     net_amount: net,
+    network,
     status: 'pending',
   });
 }
