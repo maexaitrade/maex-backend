@@ -26,6 +26,13 @@ async function resetDb() {
     multipleStatements: true,
   });
   await conn.query(sql);
+  // Tests exercise the direct-deposit flow; production addresses are configured
+  // by an admin, while the isolated test database uses this valid TRON fixture.
+  await conn.query(
+    `UPDATE \`${env.db.database}\`.settings
+     SET value = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+     WHERE \`key\` = 'deposit_address_trc20'`
+  );
   await conn.end();
   settings.clearCache();
 }
@@ -49,7 +56,11 @@ async function createAdmin(email = 'admin@test.local', password = 'admin123') {
 // Registers a member (optionally under a sponsor) and returns { id, token }.
 async function register(name, email, sponsorId) {
   const url = sponsorId ? `/api/auth/register?ref=${sponsorId}` : '/api/auth/register';
-  const res = await api.post(url).send({ name, email, password: 'secret1' });
+  let res = await api.post(url).send({ name, email, password: 'secret1' });
+  if (res.status === 200 && res.body.otpRequired) {
+    const [[pending]] = await pool.query('SELECT otp FROM pending_registrations WHERE email = ?', [email]);
+    res = await api.post('/api/auth/verify-otp').send({ email, otp: pending.otp });
+  }
   if (res.status !== 201) throw new Error(`register failed: ${res.status} ${JSON.stringify(res.body)}`);
   return { id: res.body.user.id, token: res.body.token };
 }
