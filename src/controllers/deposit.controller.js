@@ -1,9 +1,9 @@
 const { pool } = require('../config/db');
 const env = require('../config/env');
-const { isTronAddress } = require('../utils/tron');
 const { badRequest } = require('../utils/httpError');
 const { createPayment } = require('../services/nowpayments.service');
 const settings = require('../services/settings.service');
+const { activeNetwork, depositAddress, isValidAddress, NETWORKS } = require('../utils/cryptoNetwork');
 
 // Minimum deposit amount from settings (admin-editable), default 100.
 async function getMinDeposit() {
@@ -34,7 +34,15 @@ async function create(req, res) {
   if (!amt || amt <= 0) throw badRequest('amount must be a positive number');
   const minDeposit = await getMinDeposit();
   if (amt < minDeposit) throw badRequest(`minimum deposit is ${minDeposit}`);
-  if (from_address && !isTronAddress(from_address)) throw badRequest('from_address must be a valid TRC-20 (TRON) address');
+
+  const s = await settings.getSettings();
+  if ((s.deposit_via || 'admin') !== 'admin') throw badRequest('Direct admin deposits are disabled');
+  const network = activeNetwork(s);
+  const address = depositAddress(s, network);
+  if (!address) throw badRequest(`${NETWORKS[network].label} deposit address is not configured — contact admin`);
+  if (from_address && !isValidAddress(from_address, network)) {
+    throw badRequest(`from_address must be a valid ${NETWORKS[network].label} address`);
+  }
 
   if (tx_hash) {
     const [dup] = await pool.query(
@@ -45,24 +53,27 @@ async function create(req, res) {
   }
 
   const [result] = await pool.query(
-    `INSERT INTO deposits (user_id, amount, tx_hash, from_address, status)
-     VALUES (?, ?, ?, ?, 'pending')`,
-    [userId, amt, tx_hash || null, from_address || null]
+    `INSERT INTO deposits
+       (user_id, amount, tx_hash, from_address, deposit_network, deposit_address, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+    [userId, amt, tx_hash || null, from_address || null, network, address]
   );
-  res.status(201).json({ id: result.insertId, status: 'pending', amount: amt });
+  res.status(201).json({ id: result.insertId, status: 'pending', amount: amt, network });
 }
 
 // GET /api/deposits/address — returns the admin deposit address for direct deposits
 async function getDepositAddress(_req, res) {
   const s = await settings.getSettings();
-  const address = s.admin_deposit_address || '';
+  const network = activeNetwork(s);
+  const address = depositAddress(s, network);
   if (!address) throw badRequest('deposit address not configured — contact admin');
-  res.json({ address, network: s.deposit_network || 'TRC-20' });
+  res.json({ address, network, network_label: NETWORKS[network].label });
 }
 
 // POST /api/deposits/nowpayments  — create a NOWPayments USDT deposit
 async function initNowPayments(req, res) {
-  if (env.deposit.via !== 'gateway') throw badRequest('Gateway deposits are disabled');
+  const s = await settings.getSettings();
+  if ((s.deposit_via || env.deposit.via) !== 'gateway') throw badRequest('Gateway deposits are disabled');
   const userId = req.user.id;
   const { amount } = req.body || {};
   const amt = Number(amount);
@@ -73,7 +84,7 @@ async function initNowPayments(req, res) {
 
   // Insert pending deposit first to get an ID we use as order_id
   const [result] = await pool.query(
-    "INSERT INTO deposits (user_id, amount, status) VALUES (?, ?, 'pending')",
+    "INSERT INTO deposits (user_id, amount, deposit_network, status) VALUES (?, ?, 'TRC20', 'pending')",
     [userId, amt]
   );
   const depositId = result.insertId;
@@ -91,10 +102,10 @@ async function initNowPayments(req, res) {
 
   await pool.query(
     `UPDATE deposits
-       SET tx_hash = ?, pay_address = ?, pay_amount_crypto = ?,
+       SET tx_hash = ?, pay_address = ?, deposit_address = ?, pay_amount_crypto = ?,
            pay_valid_until = DATE_ADD(NOW(), INTERVAL ? HOUR)
      WHERE id = ?`,
-    [String(payment.payment_id), payment.pay_address, payment.pay_amount, env.deposit.validHours, depositId]
+    [String(payment.payment_id), payment.pay_address, payment.pay_address, payment.pay_amount, env.deposit.validHours, depositId]
   );
 
   const [[row]] = await pool.query('SELECT pay_valid_until FROM deposits WHERE id = ?', [depositId]);
